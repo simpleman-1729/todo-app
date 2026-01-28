@@ -4,9 +4,9 @@ services:
   backend:
     build: ./todo-backend
     container_name: todo-backend
-    # Added env in jenkins credentials
-    # env_file:
-    #   - ./todo-backend/.env
+    environment:
+      MONGO_URI: ${MONGO_URI}
+      PORT: 5000
     expose:
       - "5000"
     networks:
@@ -14,10 +14,10 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: 
+    build:
       context: ./todo-frontend
       args:
-        REACT_APP_API_URL : /api   
+        REACT_APP_API_URL: /api
     container_name: todo-frontend
     ports:
       - "80:80"
