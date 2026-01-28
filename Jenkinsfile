@@ -2,10 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Absolute path to docker-compose binary on EC2
-        DOCKER_COMPOSE = "/usr/local/bin/docker-compose"
-
-        // Application name (for logging/reference)
+        DOCKER_COMPOSE = "/usr/local/bin/docker-compose" // Path to Docker Compose on EC2
         PROJECT_NAME = "todo-app"
     }
 
@@ -41,10 +38,16 @@ pipeline {
         // =========================
         stage('Build Docker Images') {
             steps {
-                echo "🔨 Building Docker images..."
-                sh '''
-                    ${DOCKER_COMPOSE} -f docker-compose.yaml build --no-cache
-                '''
+                withCredentials([string(credentialsId: 'MONGO_URI', variable: 'MONGO_URI')]) {
+                    sh '''
+                        echo "🔨 Creating backend .env for build..."
+                        echo "MONGO_URI=${MONGO_URI}" > todo-backend/.env
+                        echo "PORT=5000" >> todo-backend/.env
+
+                        echo "🔨 Building Docker images..."
+                        ${DOCKER_COMPOSE} -f docker-compose.yaml build --no-cache
+                    '''
+                }
             }
         }
 
@@ -53,17 +56,17 @@ pipeline {
         // =========================
         stage('Deploy Application') {
             steps {
-                echo "🚀 Deploying application..."
-
-                withCredentials([
-                    string(credentialsId: 'MONGO_URI', variable: 'MONGO_URI')
-                ]) {
+                withCredentials([string(credentialsId: 'MONGO_URI', variable: 'MONGO_URI')]) {
                     sh '''
-                        echo "Stopping existing containers (if any)..."
+                        echo "🚀 Stopping existing containers..."
                         ${DOCKER_COMPOSE} -f docker-compose.yaml down || true
 
-                        echo "Starting containers with injected secrets..."
-                        MONGO_URI=${MONGO_URI} ${DOCKER_COMPOSE} -f docker-compose.yaml up -d
+                        echo "🚀 Creating backend .env for runtime..."
+                        echo "MONGO_URI=${MONGO_URI}" > todo-backend/.env
+                        echo "PORT=5000" >> todo-backend/.env
+
+                        echo "🚀 Starting containers..."
+                        ${DOCKER_COMPOSE} -f docker-compose.yaml up -d
                     '''
                 }
             }
@@ -74,8 +77,8 @@ pipeline {
         // =========================
         stage('Health Check') {
             steps {
-                echo "🩺 Performing health check..."
                 sh '''
+                    echo "🩺 Waiting for frontend to start..."
                     sleep 15
                     curl -f http://localhost || exit 1
                     echo "✅ Frontend is up and running on port 80"
@@ -85,17 +88,15 @@ pipeline {
     }
 
     post {
-
         success {
             echo "🎉 Deployment completed successfully!"
         }
-
         failure {
-            echo "❌ Deployment failed. Please check Jenkins logs."
+            echo "❌ Deployment failed. Check Jenkins logs for details."
         }
-
         always {
-            echo "🧹 Cleanup completed (no secrets written to disk)"
+            echo "🧹 Cleaning up temporary .env..."
+            sh 'rm -f todo-backend/.env || true'
         }
     }
 }
